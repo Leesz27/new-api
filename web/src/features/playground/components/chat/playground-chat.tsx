@@ -54,6 +54,7 @@ interface PlaygroundChatProps {
   onDeleteMessage?: (message: MessageType) => void
   onSelectPrompt?: (prompt: string) => void
   isGenerating?: boolean
+  isGeneratingImage?: boolean
   isLoadingMessages?: boolean
   editingKey?: string | null
   onSaveEdit?: (newContent: string) => void
@@ -70,6 +71,7 @@ export function PlaygroundChat({
   onDeleteMessage,
   onSelectPrompt,
   isGenerating = false,
+  isGeneratingImage = false,
   isLoadingMessages = false,
   editingKey,
   onSaveEdit,
@@ -161,6 +163,7 @@ export function PlaygroundChat({
                   className='mt-1.5'
                 />
               }
+              isGeneratingImage={isGeneratingImage}
               isSourceVisible={isSourceVisible}
               message={message}
               errorActions={

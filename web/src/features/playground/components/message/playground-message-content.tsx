@@ -58,6 +58,7 @@ type PlaygroundMessageContentProps = {
   actions: ReactNode
   alignment: MessageAlignment
   errorActions?: ReactNode
+  isGeneratingImage?: boolean
   isSourceVisible?: boolean
   message: Message
   versionContent: string
@@ -67,6 +68,7 @@ export function PlaygroundMessageContent({
   actions,
   alignment,
   errorActions,
+  isGeneratingImage = false,
   isSourceVisible = false,
   message,
   versionContent,
@@ -111,7 +113,12 @@ export function PlaygroundMessageContent({
         })}
 
       {image && (
-        <div className='space-y-3'>
+        <div
+          className={cn(
+            'border-border/70 bg-muted/70 space-y-3 rounded-2xl rounded-bl-md border px-3 py-3 shadow-sm',
+            'max-w-[85%] sm:max-w-[62ch] md:max-w-[68ch] lg:max-w-[72ch]'
+          )}
+        >
           {image.sourceUrl && (
             <img
               alt={t('Source image')}
@@ -124,11 +131,12 @@ export function PlaygroundMessageContent({
             className='border-border/70 max-h-[32rem] max-w-full rounded-lg border object-contain'
             src={sanitizeImageSrc(image.imageUrl)}
           />
-          {image.revisedPrompt && (
-            <p className='text-muted-foreground text-sm leading-6'>
-              {image.revisedPrompt}
-            </p>
-          )}
+          {image.revisedPrompt &&
+            image.revisedPrompt.trim() !== image.prompt.trim() && (
+              <p className='text-muted-foreground text-sm leading-6'>
+                {image.revisedPrompt}
+              </p>
+            )}
         </div>
       )}
 
@@ -162,7 +170,9 @@ export function PlaygroundMessageContent({
         <div className='bg-muted/70 border-border/70 flex w-fit items-center gap-2 rounded-2xl rounded-bl-md border px-4 py-2.5 shadow-sm'>
           <Loader />
           <Shimmer className='text-sm' duration={1}>
-            {t('Responding...')}
+            {isGeneratingImage
+              ? t('Generating image...')
+              : t('Responding...')}
           </Shimmer>
         </div>
       )}
@@ -177,28 +187,29 @@ export function PlaygroundMessageContent({
 
       {!isError && (showMessageContent || image) && (
         <>
-          {isSourceVisible ? (
-            <CodeBlock
-              code={versionContent}
-              className='my-0 w-fit max-w-[85%] sm:max-w-[62ch] md:max-w-[68ch] lg:max-w-[72ch]'
-              collapsedLines={24}
-              defaultCollapsed={false}
-              language='markdown'
-              maxExpandedLines={48}
-              showLineNumbers
-              showToolbar
-              title={t('Raw response')}
-            >
-              <CodeBlockCopyButton />
-            </CodeBlock>
-          ) : (
-            <MessageContent
-              variant='flat'
-              className={cn(getMessageContentStyles())}
-            >
-              <Response final={isMessageFinal}>{displayContent}</Response>
-            </MessageContent>
-          )}
+          {showMessageContent &&
+            (isSourceVisible ? (
+              <CodeBlock
+                code={versionContent}
+                className='my-0 w-fit max-w-[85%] sm:max-w-[62ch] md:max-w-[68ch] lg:max-w-[72ch]'
+                collapsedLines={24}
+                defaultCollapsed={false}
+                language='markdown'
+                maxExpandedLines={48}
+                showLineNumbers
+                showToolbar
+                title={t('Raw response')}
+              >
+                <CodeBlockCopyButton />
+              </CodeBlock>
+            ) : (
+              <MessageContent
+                variant='flat'
+                className={cn(getMessageContentStyles())}
+              >
+                <Response final={isMessageFinal}>{displayContent}</Response>
+              </MessageContent>
+            ))}
           <MessageMetadata alignment={alignment} message={message} />
           {actions}
         </>

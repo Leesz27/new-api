@@ -2370,6 +2370,7 @@
     "Generated": "生成済み",
     "Generated a system access token": "システムアクセストークンを生成しました",
     "Generated image": "生成された画像",
+    "Generating image...": "画像を生成中...",
     "Generating new codes will invalidate all existing backup codes.": "新しいコードを生成すると、既存のすべてのバックアップコードが無効になります。",
     "Generating...": "生成中...",
     "Generation quality preset": "生成品質プリセット",

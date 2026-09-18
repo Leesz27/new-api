@@ -16,27 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { MESSAGE_ROLES } from '../../constants'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
-import type { Message, MessageAttachment } from '../../types'
+import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
+import type { ImageMessageMetadata, Message, MessageAttachment } from '../../types'
 import {
+  createImageMessage,
   createLoadingAssistantMessage,
   createUserMessage,
   getMessageContent,
@@ -52,6 +35,68 @@ type ChatMessageRenderState = {
   alwaysShowActions: boolean
   content: string
   isEditing: boolean
+}
+
+export function appendImageRequestMessages(
+  messages: Message[],
+  prompt: string,
+  attachments?: MessageAttachment[],
+  model?: string
+): Message[] {
+  const submittedAt = Date.now()
+
+  return [
+    ...messages,
+    createUserMessage(prompt, submittedAt, attachments),
+    createLoadingAssistantMessage(submittedAt, model),
+  ]
+}
+
+export function completePendingImageMessage(
+  messages: Message[],
+  image: ImageMessageMetadata
+): Message[] {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (
+      message.from === MESSAGE_ROLES.ASSISTANT &&
+      message.status === MESSAGE_STATUS.LOADING
+    ) {
+      return [
+        ...messages.slice(0, index),
+        createImageMessage(image, message.createdAt ?? Date.now()),
+        ...messages.slice(index + 1),
+      ]
+    }
+  }
+
+  return [...messages, createImageMessage(image)]
+}
+
+export function removePendingAssistantMessage(messages: Message[]): Message[] {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (
+      message.from === MESSAGE_ROLES.ASSISTANT &&
+      message.status === MESSAGE_STATUS.LOADING
+    ) {
+      return [...messages.slice(0, index), ...messages.slice(index + 1)]
+    }
+  }
+
+  return messages
+}
+
+export function appendImageGenerationMessages(
+  messages: Message[],
+  prompt: string,
+  image: ImageMessageMetadata,
+  attachments?: MessageAttachment[]
+): Message[] {
+  return completePendingImageMessage(
+    appendImageRequestMessages(messages, prompt, attachments, image.model),
+    image
+  )
 }
 
 export function appendUserMessagePair(

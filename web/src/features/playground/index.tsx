@@ -34,7 +34,11 @@ import {
   usePlaygroundState,
 } from './hooks'
 import { parseRequestErrorDetails, getModelCapabilities } from './lib'
-import { createImageMessage } from './lib/message/message-utils'
+import {
+  appendImageRequestMessages,
+  completePendingImageMessage,
+  removePendingAssistantMessage,
+} from './lib/message/conversation-message-utils'
 import type { ImageResult } from './types'
 
 export function Playground() {
@@ -100,7 +104,7 @@ export function Playground() {
   }
 
   const handleImageSubmit = useCallback(
-    async (message: PromptInputMessage) => {
+    (message: PromptInputMessage) => {
       const prompt = message.text?.trim()
       const file = message.files?.[0]?.file
 
@@ -109,68 +113,89 @@ export function Playground() {
       }
       if (message.files?.length && !file) {
         toast.error(t('Attach an image before sending'))
-        throw new Error('image is required')
+        return
       }
+
+      const attachments = message.files
+        ?.filter((item) => item.url)
+        .map((item) => ({
+          name: item.filename ?? item.file?.name ?? '',
+          mediaType: item.mediaType,
+          url: item.url,
+        }))
 
       imageAbortControllersRef.current.get(activeSessionId)?.abort()
       const abortController = new AbortController()
       imageAbortControllersRef.current.set(activeSessionId, abortController)
       setIsRequestingImage(true)
 
-      try {
-        const response = file
-          ? await (() => {
-              const formData = new FormData()
-              formData.append('model', config.model)
-              formData.append('group', config.group)
-              formData.append('prompt', prompt)
-              formData.append('n', '1')
-              formData.append('image', file, file.name)
-              return sendImageEdit(formData, abortController.signal)
-            })()
-          : await sendImageGeneration(
-              {
-                model: config.model,
-                group: config.group,
-                prompt,
-                n: 1,
-              },
-              abortController.signal
-            )
-        const image = response.data[0]
-        const imageUrl =
-          image?.url ||
-          (image?.b64_json ? `data:image/png;base64,${image.b64_json}` : '')
-
-        if (!imageUrl) {
-          throw new Error(ERROR_MESSAGES.API_REQUEST_ERROR)
-        }
-
-        const result: ImageResult = {
-          model: config.model,
-          ...(file ? { sourceUrl: message.files?.[0]?.url } : {}),
-          imageUrl,
+      updateSessionMessages(activeSessionId, (previousMessages) =>
+        appendImageRequestMessages(
+          previousMessages,
           prompt,
-          revisedPrompt: image.revised_prompt,
-          mode: file ? 'edit' : 'generation',
+          attachments,
+          config.model
+        )
+      )
+
+      void (async () => {
+        try {
+          const response = file
+            ? await (() => {
+                const formData = new FormData()
+                formData.append('model', config.model)
+                formData.append('group', config.group)
+                formData.append('prompt', prompt)
+                formData.append('n', '1')
+                formData.append('image', file, file.name)
+                return sendImageEdit(formData, abortController.signal)
+              })()
+            : await sendImageGeneration(
+                {
+                  model: config.model,
+                  group: config.group,
+                  prompt,
+                  n: 1,
+                },
+                abortController.signal
+              )
+          const image = response.data[0]
+          const imageUrl =
+            image?.url ||
+            (image?.b64_json ? `data:image/png;base64,${image.b64_json}` : '')
+
+          if (!imageUrl) {
+            throw new Error(ERROR_MESSAGES.API_REQUEST_ERROR)
+          }
+
+          const result: ImageResult = {
+            model: config.model,
+            ...(file ? { sourceUrl: message.files?.[0]?.url } : {}),
+            imageUrl,
+            prompt,
+            revisedPrompt: image.revised_prompt,
+            mode: file ? 'edit' : 'generation',
+          }
+          updateSessionMessages(activeSessionId, (previousMessages) =>
+            completePendingImageMessage(previousMessages, result)
+          )
+        } catch (error: unknown) {
+          updateSessionMessages(activeSessionId, removePendingAssistantMessage)
+          if (abortController.signal.aborted) {
+            return
+          }
+          const { errorMessage } = parseRequestErrorDetails(error)
+          toast.error(t(errorMessage))
+        } finally {
+          if (
+            imageAbortControllersRef.current.get(activeSessionId) ===
+            abortController
+          ) {
+            imageAbortControllersRef.current.delete(activeSessionId)
+            setIsRequestingImage(false)
+          }
         }
-        updateSessionMessages(activeSessionId, (previousMessages) => [
-          ...previousMessages,
-          createImageMessage(result),
-        ])
-      } catch (error: unknown) {
-        if (abortController.signal.aborted) {
-          return
-        }
-        const { errorMessage } = parseRequestErrorDetails(error)
-        toast.error(t(errorMessage))
-        throw error
-      } finally {
-        if (imageAbortControllersRef.current.get(activeSessionId) === abortController) {
-          imageAbortControllersRef.current.delete(activeSessionId)
-          setIsRequestingImage(false)
-        }
-      }
+      })()
     },
     [activeSessionId, config.group, config.model, t, updateSessionMessages]
   )
@@ -261,6 +286,7 @@ export function Playground() {
             onDeleteMessage={handleDeleteMessage}
             onSelectPrompt={handleSendMessage}
             isGenerating={isActiveSessionGenerating || isRequestingImage}
+            isGeneratingImage={isRequestingImage}
             editingKey={editingMessageKey}
             onCancelEdit={handleEditOpenChange}
             onSaveEdit={(newContent) => applyEdit(newContent, false)}
@@ -283,6 +309,7 @@ export function Playground() {
             groups={groups}
             groupValue={config.group}
             isGenerating={isActiveSessionGenerating || isRequestingImage}
+            isGeneratingImage={isRequestingImage}
             isModelLoading={isLoadingModels}
             modelValue={config.model}
             models={models}

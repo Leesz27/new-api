@@ -47,6 +47,7 @@ interface PlaygroundInputProps {
   onStop?: () => void
   disabled?: boolean
   isGenerating?: boolean
+  isGeneratingImage?: boolean
   models: ModelOption[]
   modelValue: string
   onModelChange: (value: string) => void
@@ -74,6 +75,7 @@ export function PlaygroundInput({
   onStop,
   disabled,
   isGenerating,
+  isGeneratingImage = false,
   models,
   modelValue,
   onModelChange,
@@ -100,8 +102,15 @@ export function PlaygroundInput({
     const submittableText = getSubmittableInputText(message, disabled)
 
     if (!submittableText) return
-    await onSubmit({ ...message, text: submittableText })
+
+    // Clear immediately so image/chat modes both feel like send-and-wait,
+    // instead of keeping the draft until the request finishes.
     setText('')
+    try {
+      await onSubmit({ ...message, text: submittableText })
+    } catch {
+      // Keep the cleared input; callers already surface request errors.
+    }
   }
 
   return (
@@ -148,6 +157,7 @@ export function PlaygroundInput({
             groups={groups}
             groupValue={groupValue}
             isGenerating={isGenerating}
+            isGeneratingImage={isGeneratingImage}
             isModelLoading={isModelLoading}
             models={models}
             modelValue={modelValue}

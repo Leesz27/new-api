@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { SendIcon, SquareIcon } from 'lucide-react'
+import { Loader2Icon, SendIcon, SquareIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -31,6 +31,7 @@ type PlaygroundInputControlsProps = {
   groups: GroupOption[]
   groupValue: string
   isGenerating?: boolean
+  isGeneratingImage?: boolean
   isModelLoading?: boolean
   models: ModelOption[]
   modelValue: string
@@ -46,6 +47,7 @@ export function PlaygroundInputControls({
   groups,
   groupValue,
   isGenerating,
+  isGeneratingImage = false,
   isModelLoading = false,
   models,
   modelValue,
@@ -81,15 +83,23 @@ export function PlaygroundInputControls({
 
   const renderSubmitButton = () =>
     shouldShowStop ? (
-      <PromptInputButton
-        className='border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15 font-medium'
-        onClick={onStop}
-        variant='secondary'
-      >
-        <SquareIcon className='fill-current' size={16} />
-        <span className='hidden sm:inline'>{t('Stop')}</span>
-        <span className='sr-only sm:hidden'>{t('Stop')}</span>
-      </PromptInputButton>
+      <div className='flex items-center gap-2'>
+        <span className='text-muted-foreground hidden items-center gap-1.5 text-xs sm:inline-flex'>
+          <Loader2Icon aria-hidden='true' className='size-3.5 animate-spin' />
+          {isGeneratingImage ? t('Generating image...') : t('Responding...')}
+        </span>
+        <PromptInputButton
+          aria-busy='true'
+          className='border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15 font-medium'
+          onClick={onStop}
+          variant='secondary'
+        >
+          <Loader2Icon aria-hidden='true' className='size-4 animate-spin sm:hidden' />
+          <SquareIcon className='hidden fill-current sm:block' size={16} />
+          <span className='hidden sm:inline'>{t('Stop')}</span>
+          <span className='sr-only sm:hidden'>{t('Stop')}</span>
+        </PromptInputButton>
+      </div>
     ) : (
       <PromptInputButton
         className='bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 h-8 px-3 font-medium shadow-sm'
