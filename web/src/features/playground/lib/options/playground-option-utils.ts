@@ -16,7 +16,44 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { GroupOption, ModelOption } from '../../types'
+import type { GroupOption, ModelCapabilities, ModelOption } from '../../types'
+
+const EMPTY_CAPABILITIES: ModelCapabilities = {
+  chat: false,
+  vision: false,
+  imageGeneration: false,
+  imageEdit: false,
+}
+
+const VISION_CHAT_MODEL_PREFIXES = ['gpt-4o', 'gpt-4.1', 'gpt-5'] as const
+
+export function resolveModelCapabilities(
+  modelName: string,
+  supportedEndpointTypes: string[]
+): ModelCapabilities {
+  const isImageModel =
+    modelName === 'image-2' ||
+    modelName === 'gpt-image-2' ||
+    modelName.startsWith('gpt-image-')
+  const imageGeneration =
+    supportedEndpointTypes.includes('image-generation') || isImageModel
+  const imageEdit = imageGeneration && isImageModel
+  const chat = supportedEndpointTypes.includes('openai') && !imageGeneration
+  const vision =
+    chat &&
+    VISION_CHAT_MODEL_PREFIXES.some((prefix) => modelName.startsWith(prefix))
+
+  return {
+    chat,
+    vision,
+    imageGeneration,
+    imageEdit,
+  }
+}
+
+export function getModelCapabilities(model?: ModelOption): ModelCapabilities {
+  return model?.capabilities ?? EMPTY_CAPABILITIES
+}
 
 export function getModelFallback(
   models: ModelOption[],

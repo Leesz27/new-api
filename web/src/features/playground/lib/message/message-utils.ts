@@ -21,18 +21,47 @@ import { nanoid } from 'nanoid'
 import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
 import type {
   Message,
+  MessageAttachment,
   MessageVersion,
   ChatCompletionMessage,
   ContentPart,
+  ImageMessageMetadata,
 } from '../../types'
 
 /**
  * Create a new message version
  */
-export function createMessageVersion(content: string): MessageVersion {
+export function createMessageVersion(
+  content: string,
+  attachments?: MessageAttachment[]
+): MessageVersion {
   return {
     id: nanoid(),
     content,
+    ...(attachments?.length ? { attachments } : {}),
+  }
+}
+
+export function createImageMessage(
+  image: ImageMessageMetadata,
+  createdAt: number = Date.now()
+): Message {
+  return {
+    key: nanoid(),
+    from: MESSAGE_ROLES.ASSISTANT,
+    model: image.model,
+    versions: [
+      {
+        id: nanoid(),
+        content: '',
+        image,
+      },
+    ],
+    createdAt,
+    completedAt: createdAt,
+    status: MESSAGE_STATUS.COMPLETE,
+    isContentComplete: true,
+    isReasoningComplete: true,
   }
 }
 
@@ -41,6 +70,20 @@ export function createMessageVersion(content: string): MessageVersion {
  */
 export function getCurrentVersion(message: Message): MessageVersion {
   return message.versions[0] || { id: 'default', content: '' }
+}
+
+export function getImageMessage(message: Message): ImageMessageMetadata | null {
+  return getCurrentVersion(message).image ?? null
+}
+
+export function getMessageCopyContent(message: Message): string {
+  const content = getMessageContent(message)
+  const image = getImageMessage(message)
+  if (!image) return content
+
+  const lines = [content.trim(), `![Generated image](${image.imageUrl})`]
+  if (image.revisedPrompt) lines.push(image.revisedPrompt)
+  return lines.filter(Boolean).join('\n\n')
 }
 
 /**
@@ -76,12 +119,13 @@ export function updateCurrentVersionContent(
  */
 export function createUserMessage(
   content: string,
-  createdAt: number = Date.now()
+  createdAt: number = Date.now(),
+  attachments?: MessageAttachment[]
 ): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.USER,
-    versions: [createMessageVersion(content)],
+    versions: [createMessageVersion(content, attachments)],
     createdAt,
   }
 }
@@ -90,11 +134,13 @@ export function createUserMessage(
  * Create a loading assistant message
  */
 export function createLoadingAssistantMessage(
-  startedAt: number = Date.now()
+  startedAt: number = Date.now(),
+  model?: string
 ): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.ASSISTANT,
+    model,
     versions: [createMessageVersion('')],
     createdAt: startedAt,
     startedAt,
@@ -154,9 +200,14 @@ export function getTextContent(content: string | ContentPart[]): string {
  */
 export function formatMessageForAPI(message: Message): ChatCompletionMessage {
   const currentVersion = getCurrentVersion(message)
+  const imageUrls = currentVersion.attachments
+    ?.filter((attachment) => attachment.mediaType.startsWith('image/'))
+    .map((attachment) => attachment.url)
+    .filter(Boolean)
+
   return {
     role: message.from,
-    content: currentVersion.content,
+    content: buildMessageContent(currentVersion.content, imageUrls),
   }
 }
 
@@ -172,5 +223,8 @@ export function isValidMessage(message: Message): boolean {
     return false
   }
 
-  return true
+  return (
+    hasMessageContent(message) ||
+    Boolean(getCurrentVersion(message).attachments?.length)
+  )
 }

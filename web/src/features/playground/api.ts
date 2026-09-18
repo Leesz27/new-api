@@ -19,12 +19,37 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import { API_ENDPOINTS } from './constants'
+import { resolveModelCapabilities } from './lib'
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ModelOption,
   GroupOption,
+  ImageGenerationRequest,
+  ImageResponse,
 } from './types'
+
+type UserModelResponse =
+  | string
+  | {
+      id?: string
+      supported_endpoint_types?: string[]
+    }
+
+function toModelOption(model: UserModelResponse): ModelOption | null {
+  const value = typeof model === 'string' ? model : (model.id ?? '')
+  if (!value) return null
+
+  const supportedEndpointTypes =
+    typeof model === 'string' ? ['openai'] : (model.supported_endpoint_types ?? [])
+
+  return {
+    label: value,
+    value,
+    supportedEndpointTypes,
+    capabilities: resolveModelCapabilities(value, supportedEndpointTypes),
+  }
+}
 
 /**
  * Send chat completion request (non-streaming)
@@ -34,6 +59,28 @@ export async function sendChatCompletion(
   signal?: AbortSignal
 ): Promise<ChatCompletionResponse> {
   const res = await api.post(API_ENDPOINTS.CHAT_COMPLETIONS, payload, {
+    signal,
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function sendImageGeneration(
+  payload: ImageGenerationRequest,
+  signal?: AbortSignal
+): Promise<ImageResponse> {
+  const res = await api.post(API_ENDPOINTS.IMAGE_GENERATIONS, payload, {
+    signal,
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function sendImageEdit(
+  formData: FormData,
+  signal?: AbortSignal
+): Promise<ImageResponse> {
+  const res = await api.post(API_ENDPOINTS.IMAGE_EDITS, formData, {
     signal,
     skipErrorHandler: true,
   } as Record<string, unknown>)
@@ -53,10 +100,9 @@ export async function getUserModels(group: string): Promise<ModelOption[]> {
     return []
   }
 
-  return data.data.map((model: string) => ({
-    label: model,
-    value: model,
-  }))
+  return data.data
+    .map((model: UserModelResponse) => toModelOption(model))
+    .filter((model: ModelOption | null): model is ModelOption => model !== null)
 }
 
 /**

@@ -29,7 +29,7 @@ export function getMessageAlignment(
     return 'left'
   }
 
-  return message.from === MESSAGE_ROLES.USER ? 'right' : 'left'
+  return message.from === MESSAGE_ROLES.USER ? 'left' : 'right'
 }
 
 export function getMessageAlignmentClass(alignment: MessageAlignment): string {

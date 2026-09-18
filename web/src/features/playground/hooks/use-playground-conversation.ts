@@ -24,7 +24,7 @@ import {
   createRegeneratedMessages,
   removeMessageByKey,
 } from '../lib'
-import type { Message } from '../types'
+import type { Message, MessageAttachment } from '../types'
 
 type UsePlaygroundConversationOptions = {
   messages: Message[]
@@ -32,24 +32,31 @@ type UsePlaygroundConversationOptions = {
     updater: Message[] | ((prev: Message[]) => Message[])
   ) => void
   sendChat: (messages: Message[]) => void
+  model?: string
 }
 
 export function usePlaygroundConversation({
   messages,
   updateMessages,
   sendChat,
+  model,
 }: UsePlaygroundConversationOptions) {
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
     null
   )
 
   const handleSendMessage = useCallback(
-    (text: string) => {
-      const nextMessages = appendUserMessagePair(messages, text)
+    (text: string, attachments?: MessageAttachment[]) => {
+      const nextMessages = appendUserMessagePair(
+        messages,
+        text,
+        attachments,
+        model
+      )
       updateMessages(nextMessages)
       sendChat(nextMessages)
     },
-    [messages, updateMessages, sendChat]
+    [messages, updateMessages, sendChat, model]
   )
 
   const handleRegenerateMessage = useCallback(
@@ -81,7 +88,8 @@ export function usePlaygroundConversation({
         messages,
         editingMessageKey,
         newContent,
-        shouldSubmit
+        shouldSubmit,
+        model
       )
       if (!editResult) return
 
@@ -92,7 +100,7 @@ export function usePlaygroundConversation({
         sendChat(editResult.messages)
       }
     },
-    [editingMessageKey, messages, updateMessages, sendChat]
+    [editingMessageKey, messages, updateMessages, sendChat, model]
   )
 
   const handleDeleteMessage = useCallback(

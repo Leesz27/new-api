@@ -96,7 +96,7 @@ import { cn } from '@/lib/utils'
 // ============================================================================
 
 export type AttachmentsContext = {
-  files: (FileUIPart & { id: string })[]
+  files: (FileUIPart & { id: string; file?: File })[]
   add: (files: File[] | FileList) => void
   remove: (id: string) => void
   clear: () => void
@@ -171,26 +171,26 @@ export function PromptInputProvider({
 
   // ----- attachments state (global when wrapped)
   const [attachements, setAttachements] = useState<
-    (FileUIPart & { id: string })[]
+    (FileUIPart & { id: string; file?: File })[]
   >([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef<() => void>(() => {})
 
   const add = useCallback((files: File[] | FileList) => {
-    const incoming = Array.from(files)
+    const incoming = [...files]
     if (incoming.length === 0) return
 
-    setAttachements((prev) =>
-      prev.concat(
-        incoming.map((file) => ({
-          id: nanoid(),
-          type: 'file' as const,
-          url: URL.createObjectURL(file),
-          mediaType: file.type,
-          filename: file.name,
-        }))
-      )
-    )
+    setAttachements((prev) => [
+      ...prev,
+      ...incoming.map((file) => ({
+        id: nanoid(),
+        type: 'file' as const,
+        url: URL.createObjectURL(file),
+        mediaType: file.type,
+        filename: file.name,
+        file,
+      })),
+    ])
   }, [])
 
   const remove = useCallback((id: string) => {
@@ -422,7 +422,7 @@ export const PromptInputActionAddAttachments = ({
 
 export type PromptInputMessage = {
   text?: string
-  files?: FileUIPart[]
+  files?: (FileUIPart & { file?: File })[]
 }
 
 export type PromptInputProps = Omit<
@@ -486,7 +486,9 @@ export const PromptInput = ({
   }, [])
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([])
+  const [items, setItems] = useState<
+    (FileUIPart & { id: string; file?: File })[]
+  >([])
   const files = usingProvider ? controller.attachments.files : items
 
   const openFileDialogLocal = useCallback(() => {
@@ -498,11 +500,20 @@ export const PromptInput = ({
       if (!accept || accept.trim() === '') {
         return true
       }
-      if (accept.includes('image/*')) {
-        return f.type.startsWith('image/')
-      }
-      // NOTE: keep simple; expand as needed
-      return true
+      const acceptedTypes = accept
+        .split(',')
+        .map((type) => type.trim().toLowerCase())
+        .filter(Boolean)
+
+      return acceptedTypes.some((acceptedType) => {
+        if (acceptedType.endsWith('/*')) {
+          return f.type.startsWith(acceptedType.slice(0, -1))
+        }
+        if (acceptedType.startsWith('.')) {
+          return f.name.toLowerCase().endsWith(acceptedType)
+        }
+        return f.type.toLowerCase() === acceptedType
+      })
     },
     [accept]
   )
@@ -542,7 +553,7 @@ export const PromptInput = ({
             message: t('Too many files. Some were not added.'),
           })
         }
-        const next: (FileUIPart & { id: string })[] = []
+        const next: (FileUIPart & { id: string; file?: File })[] = []
         for (const file of capped) {
           next.push({
             id: nanoid(),
@@ -550,6 +561,7 @@ export const PromptInput = ({
             url: URL.createObjectURL(file),
             mediaType: file.type,
             filename: file.name,
+            file,
           })
         }
         return prev.concat(next)
@@ -737,7 +749,7 @@ export const PromptInput = ({
         }
         return item
       })
-    ).then((convertedFiles: FileUIPart[]) => {
+    ).then((convertedFiles: NonNullable<PromptInputMessage['files']>) => {
       try {
         const result = onSubmit({ text, files: convertedFiles }, event)
 

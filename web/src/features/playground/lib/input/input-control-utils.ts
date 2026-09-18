@@ -35,6 +35,7 @@ type InputControlState = {
 }
 
 type SubmittableInputMessage = {
+  files?: unknown[]
   text?: string | null
 }
 

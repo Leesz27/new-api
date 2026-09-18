@@ -17,7 +17,6 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -106,9 +105,8 @@ func Distribute() func(c *gin.Context) {
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 				// check path is /pg/chat/completions
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-					playgroundRequest := &dto.PlayGroundRequest{}
-					err = common.UnmarshalBodyReusable(c, playgroundRequest)
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/") {
+					playgroundRequest, err := getModelFromRequest(c)
 					if err != nil {
 						abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidPlayground, map[string]any{"Error": err.Error()}))
 						return
@@ -521,9 +519,9 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			modelRequest.Model = c.Param("model")
 		}
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/v1/images/generations") {
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/images/generations") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
 		modelRequest.Model = common.GetStringIfEmpty(modelRequest.Model, "dall-e")
-	} else if strings.HasPrefix(c.Request.URL.Path, "/v1/images/edits") {
+	} else if strings.HasPrefix(c.Request.URL.Path, "/v1/images/edits") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/edits") {
 		//modelRequest.Model = common.GetStringIfEmpty(c.PostForm("model"), "gpt-image-1")
 		contentType := c.ContentType()
 		if slices.Contains([]string{gin.MIMEPOSTForm, gin.MIMEMultipartPOSTForm}, contentType) {
@@ -555,8 +553,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("relay_mode", relayMode)
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-		// playground chat completions
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/") {
 		req, err := getModelFromRequest(c)
 		if err != nil {
 			return nil, false, err

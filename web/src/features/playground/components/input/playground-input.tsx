@@ -21,7 +21,10 @@ import { useTranslation } from 'react-i18next'
 
 import {
   PromptInput,
+  PromptInputAttachments,
+  PromptInputAttachment,
   PromptInputFooter,
+  PromptInputHeader,
   PromptInputTextarea,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
@@ -30,6 +33,7 @@ import { getSubmittableInputText } from '../../lib'
 import type {
   ModelOption,
   GroupOption,
+  ModelCapabilities,
   ParameterEnabled,
   PlaygroundConfig,
 } from '../../types'
@@ -38,7 +42,7 @@ import { PlaygroundInputTools } from './playground-input-tools'
 
 interface PlaygroundInputProps {
   config: PlaygroundConfig
-  onSubmit: (text: string) => void
+  onSubmit: (message: PromptInputMessage) => void | Promise<void>
   onStop?: () => void
   disabled?: boolean
   isGenerating?: boolean
@@ -60,6 +64,7 @@ interface PlaygroundInputProps {
     value: boolean
   ) => void
   parameterEnabled: ParameterEnabled
+  capabilities: ModelCapabilities
 }
 
 export function PlaygroundInput({
@@ -80,25 +85,39 @@ export function PlaygroundInput({
   onClearMessages,
   onParameterEnabledChange,
   parameterEnabled,
+  capabilities,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
 
-  const handleSubmit = (message: PromptInputMessage) => {
+  const canAttachImage =
+    capabilities.vision ||
+    capabilities.imageGeneration ||
+    capabilities.imageEdit
+
+  const handleSubmit = async (message: PromptInputMessage) => {
     const submittableText = getSubmittableInputText(message, disabled)
 
     if (!submittableText) return
-    onSubmit(submittableText)
+    await onSubmit({ ...message, text: submittableText })
     setText('')
   }
 
   return (
     <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
       <PromptInput
+        accept={canAttachImage ? 'image/png,image/jpeg,image/webp' : undefined}
         className='relative'
-        groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
+        groupClassName='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_36px_-24px_rgba(15,23,42,0.45)] ring-1 ring-slate-200/70 transition-all duration-200 focus-within:border-primary/60 focus-within:ring-primary/20 focus-within:shadow-[0_16px_42px_-22px_rgba(15,23,42,0.5)] has-disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:ring-slate-700/80 dark:has-disabled:bg-slate-800'
+        maxFileSize={25 * 1024 * 1024}
+        maxFiles={canAttachImage ? 1 : 0}
         onSubmit={handleSubmit}
       >
+        <PromptInputHeader className='border-b border-slate-200 bg-slate-50/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/80'>
+          <PromptInputAttachments>
+            {(attachment) => <PromptInputAttachment data={attachment} />}
+          </PromptInputAttachments>
+        </PromptInputHeader>
         <PromptInputTextarea
           autoComplete='off'
           autoCorrect='off'
@@ -111,7 +130,7 @@ export function PlaygroundInput({
           value={text}
         />
 
-        <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 border-t px-3 py-2.5 backdrop-blur'>
+        <PromptInputFooter className='border-t border-slate-200 bg-slate-50/90 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/80'>
           <PlaygroundInputControls
             disabled={disabled}
             groups={groups}
@@ -126,6 +145,7 @@ export function PlaygroundInput({
             text={text}
             tools={
               <PlaygroundInputTools
+                capabilities={capabilities}
                 config={config}
                 disabled={disabled}
                 hasMessages={hasMessages}

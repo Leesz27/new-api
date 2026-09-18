@@ -46,6 +46,7 @@ import {
   getMessageActionState,
   getMessageActionsVisibilityClass,
 } from '../../lib'
+import { getImageMessage, getMessageCopyContent } from '../../lib/message/message-utils'
 import type { Message } from '../../types'
 import { MessageActionButton } from './message-action-button'
 
@@ -71,6 +72,24 @@ type MessageActionItem = {
   variant?: 'default' | 'destructive'
 }
 
+async function copyImageToClipboard(imageUrl: string): Promise<boolean> {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+    return false
+  }
+
+  try {
+    const response = await fetch(imageUrl)
+    if (!response.ok) return false
+    const blob = await response.blob()
+    await navigator.clipboard.write([
+      new ClipboardItem({ [blob.type || 'image/png']: blob }),
+    ])
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function MessageActions({
   message,
   onCopy,
@@ -87,16 +106,27 @@ export function MessageActions({
   const { copiedText, copyToClipboard } = useCopyToClipboard()
   const { guardAction } = useMessageActionGuard(isGenerating)
 
-  const { content, hasContent, isAssistant, isLoading, isUser } =
+  const { hasContent, isAssistant, isLoading, isUser } =
     getMessageActionState(message)
-  const isCopied = copiedText === content
+  const copyContent = getMessageCopyContent(message)
+  const image = getImageMessage(message)
+  const hasCopyContent = copyContent.trim().length > 0 || Boolean(image)
+  const isCopied = copiedText === copyContent
 
-  const handleCopy = () => {
-    if (!content) {
+  const handleCopy = async () => {
+    if (image) {
+      const copiedImage = await copyImageToClipboard(image.imageUrl)
+      if (copiedImage) {
+        onCopy?.(message)
+        return
+      }
+    }
+
+    if (!copyContent.trim()) {
       toast.warning(t(MESSAGE_ACTION_LABELS.NO_CONTENT))
       return
     }
-    copyToClipboard(content)
+    await copyToClipboard(copyContent)
     onCopy?.(message)
   }
 
@@ -108,7 +138,7 @@ export function MessageActions({
   const visibilityClass = getMessageActionsVisibilityClass(alwaysVisible)
   const actions: MessageActionItem[] = []
 
-  if (hasContent) {
+  if (hasCopyContent) {
     actions.push({
       className: isCopied ? 'text-green-600' : '',
       icon: isCopied ? Check : Copy,

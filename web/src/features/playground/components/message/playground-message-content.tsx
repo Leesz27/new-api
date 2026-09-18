@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -16,8 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
+import { sanitizeImageSrc } from 'stream-markdown-parser'
 
 import {
   CodeBlock,
@@ -48,6 +49,7 @@ import {
   type MessageAlignment,
 } from '../../lib'
 import { getMessageContentStyles } from '../../lib/message/message-styles'
+import { getImageMessage } from '../../lib/message/message-utils'
 import type { Message } from '../../types'
 import { MessageError } from './message-error'
 import { MessageMetadata } from './message-metadata'
@@ -79,6 +81,7 @@ export function PlaygroundMessageContent({
     showMessageContent,
     sources,
   } = getMessageContentState(message, versionContent)
+  const image = getImageMessage(message)
   const isError = isErrorMessage(message)
   const isMessageFinal =
     message.status !== MESSAGE_STATUS.LOADING &&
@@ -91,6 +94,44 @@ export function PlaygroundMessageContent({
         getMessageAlignmentClass(alignment)
       )}
     >
+      {message.from === 'user' &&
+        message.versions[0]?.attachments?.map((attachment) => {
+          const src = sanitizeImageSrc(attachment.url)
+          if (!src || !attachment.mediaType.startsWith('image/')) return null
+
+          return (
+            <img
+              alt={attachment.name}
+              className='border-border/70 mb-3 max-h-72 max-w-full rounded-lg border object-contain'
+              key={`${attachment.name}-${attachment.url}`}
+              loading='lazy'
+              src={src}
+            />
+          )
+        })}
+
+      {image && (
+        <div className='space-y-3'>
+          {image.sourceUrl && (
+            <img
+              alt={t('Source image')}
+              className='border-border/70 max-h-72 max-w-full rounded-lg border object-contain'
+              src={sanitizeImageSrc(image.sourceUrl)}
+            />
+          )}
+          <img
+            alt={image.revisedPrompt || image.prompt}
+            className='border-border/70 max-h-[32rem] max-w-full rounded-lg border object-contain'
+            src={sanitizeImageSrc(image.imageUrl)}
+          />
+          {image.revisedPrompt && (
+            <p className='text-muted-foreground text-sm leading-6'>
+              {image.revisedPrompt}
+            </p>
+          )}
+        </div>
+      )}
+
       {hasSources && (
         <Sources>
           <SourcesTrigger count={sources.length} />
@@ -134,7 +175,7 @@ export function PlaygroundMessageContent({
         </>
       )}
 
-      {!isError && showMessageContent && (
+      {!isError && (showMessageContent || image) && (
         <>
           {isSourceVisible ? (
             <CodeBlock

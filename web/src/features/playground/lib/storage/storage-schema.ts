@@ -18,7 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
-export const STORAGE_VERSION = 1
+export const STORAGE_VERSION = 2
+export const MAX_STORED_SESSIONS = 50
 export const MAX_STORED_MESSAGES = 100
 export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
@@ -53,9 +54,26 @@ const messageStatusSchema = z.enum([
   'error',
 ])
 
+const messageAttachmentSchema = z.object({
+  name: z.string(),
+  mediaType: z.string(),
+  url: z.string(),
+})
+
+const imageMessageSchema = z.object({
+  model: z.string().optional(),
+  sourceUrl: z.string().optional(),
+  imageUrl: z.string(),
+  prompt: z.string(),
+  revisedPrompt: z.string().optional(),
+  mode: z.enum(['generation', 'edit']),
+})
+
 const messageVersionSchema = z.object({
   id: z.string(),
   content: z.string(),
+  attachments: z.array(messageAttachmentSchema).max(1).optional(),
+  image: imageMessageSchema.optional(),
 })
 
 const sourceSchema = z.object({
@@ -89,3 +107,18 @@ const messageSchema = z.object({
 })
 
 export const messagesSchema = z.array(messageSchema)
+
+const playgroundSessionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  config: playgroundConfigSchema,
+  parameterEnabled: parameterEnabledSchema,
+  messages: messagesSchema,
+})
+
+export const playgroundWorkspaceSchema = z.object({
+  activeSessionId: z.string(),
+  sessions: z.array(playgroundSessionSchema).min(1).max(MAX_STORED_SESSIONS),
+})

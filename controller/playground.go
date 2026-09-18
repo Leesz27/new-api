@@ -13,6 +13,18 @@ import (
 )
 
 func Playground(c *gin.Context) {
+	playgroundRelay(c, types.RelayFormatOpenAI)
+}
+
+func PlaygroundImageGeneration(c *gin.Context) {
+	playgroundRelay(c, types.RelayFormatOpenAIImage)
+}
+
+func PlaygroundImageEdit(c *gin.Context) {
+	playgroundRelay(c, types.RelayFormatOpenAIImage)
+}
+
+func playgroundRelay(c *gin.Context, relayFormat types.RelayFormat) {
 	var newAPIError *types.NewAPIError
 
 	defer func() {
@@ -23,21 +35,18 @@ func Playground(c *gin.Context) {
 		}
 	}()
 
-	useAccessToken := c.GetBool("use_access_token")
-	if useAccessToken {
+	if c.GetBool("use_access_token") {
 		newAPIError = types.NewError(errors.New("暂不支持使用 access token"), types.ErrorCodeAccessDenied, types.ErrOptionWithSkipRetry())
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAI, nil, nil)
+	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, nil, nil)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 		return
 	}
 
 	userId := c.GetInt("id")
-
-	// Write user context to ensure acceptUnsetRatio is available
 	userCache, err := model.GetUserCache(userId)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
@@ -52,5 +61,5 @@ func Playground(c *gin.Context) {
 	}
 	_ = middleware.SetupContextForToken(c, tempToken)
 
-	Relay(c, types.RelayFormatOpenAI)
+	Relay(c, relayFormat)
 }

@@ -184,12 +184,18 @@ export function createStreamRequestController(
  * Hook for handling streaming chat completion requests
  */
 export function useStreamRequest() {
-  const [isStreaming, setIsStreaming] = useState(false)
-  const controllerRef = useRef<ReturnType<
-    typeof createStreamRequestController
-  > | null>(null)
-  if (!controllerRef.current) {
-    controllerRef.current = createStreamRequestController({
+  const [streamingSessions, setStreamingSessions] = useState<Set<string>>(
+    () => new Set()
+  )
+  const controllersRef = useRef(
+    new Map<string, ReturnType<typeof createStreamRequestController>>()
+  )
+
+  const getController = useCallback((sessionId: string) => {
+    const existing = controllersRef.current.get(sessionId)
+    if (existing) return existing
+
+    const controller = createStreamRequestController({
       getHeaders: getFreshAuthHeaders,
       createSource: (payload, headers) =>
         new SSE(API_ENDPOINTS.CHAT_COMPLETIONS, {
@@ -197,32 +203,44 @@ export function useStreamRequest() {
           method: 'POST',
           payload: JSON.stringify(payload),
         }) as StreamEventSource,
-      setStreaming: setIsStreaming,
+      setStreaming: (streaming) => {
+        setStreamingSessions((current) => {
+          const next = new Set(current)
+          if (streaming) next.add(sessionId)
+          else next.delete(sessionId)
+          return next
+        })
+      },
     })
-  }
+    controllersRef.current.set(sessionId, controller)
+    return controller
+  }, [])
 
   const sendStreamRequest = useCallback(
     (
+      sessionId: string,
       payload: ChatCompletionRequest,
       onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
       onComplete: () => void,
       onError: (error: string, errorCode?: string) => void
     ) =>
-      controllerRef.current?.send(payload, {
+      getController(sessionId).send(payload, {
         onUpdate,
         onComplete,
         onError,
       }),
-    []
+    [getController]
   )
 
-  const stopStream = useCallback(() => {
-    controllerRef.current?.stop()
+  const stopStream = useCallback((sessionId: string) => {
+    controllersRef.current.get(sessionId)?.stop()
   }, [])
 
   useEffect(
     () => () => {
-      controllerRef.current?.dispose()
+      for (const controller of controllersRef.current.values()) {
+        controller.dispose()
+      }
     },
     []
   )
@@ -230,6 +248,6 @@ export function useStreamRequest() {
   return {
     sendStreamRequest,
     stopStream,
-    isStreaming,
+    isStreaming: (sessionId: string) => streamingSessions.has(sessionId),
   }
 }

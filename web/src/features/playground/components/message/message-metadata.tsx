@@ -60,8 +60,9 @@ export function MessageMetadata(props: MessageMetadataProps) {
   const { t } = useTranslation()
   const messageTime = formatMessageTime(props.message.createdAt)
   const duration = formatDuration(props.message.durationMs, t)
+  const model = props.message.model?.trim()
 
-  if (!messageTime && !duration) {
+  if (!messageTime && !duration && !model) {
     return null
   }
 
@@ -72,6 +73,8 @@ export function MessageMetadata(props: MessageMetadataProps) {
         props.alignment === 'right' && 'justify-end'
       )}
     >
+      {model && <span>{model}</span>}
+      {model && (messageTime || duration) && <span aria-hidden='true'>·</span>}
       {messageTime && <time>{messageTime}</time>}
       {duration && (
         <>

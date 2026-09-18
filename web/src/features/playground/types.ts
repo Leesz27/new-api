@@ -23,14 +23,32 @@ export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
 export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
 
+export type ImageMessageMetadata = {
+  model?: string
+  sourceUrl?: string
+  imageUrl: string
+  prompt: string
+  revisedPrompt?: string
+  mode: 'generation' | 'edit'
+}
+
 export interface MessageVersion {
   id: string
   content: string
+  attachments?: MessageAttachment[]
+  image?: ImageMessageMetadata
+}
+
+export interface MessageAttachment {
+  name: string
+  mediaType: string
+  url: string
 }
 
 export interface Message {
   key: string
   from: MessageRole
+  model?: string
   versions: MessageVersion[]
   createdAt?: number
   startedAt?: number
@@ -115,6 +133,23 @@ export interface ChatCompletionResponse {
   }
 }
 
+export interface ImageResponse {
+  data: Array<{
+    url?: string
+    b64_json?: string
+    revised_prompt?: string
+  }>
+}
+
+export interface ImageGenerationRequest {
+  model: string
+  group?: string
+  prompt: string
+  n: number
+}
+
+export interface ImageResult extends ImageMessageMetadata {}
+
 // Configuration types
 export interface PlaygroundConfig {
   model: string
@@ -137,10 +172,34 @@ export interface ParameterEnabled {
   seed: boolean
 }
 
+export interface PlaygroundSession {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  config: PlaygroundConfig
+  parameterEnabled: ParameterEnabled
+  messages: Message[]
+}
+
+export interface PlaygroundWorkspace {
+  activeSessionId: string
+  sessions: PlaygroundSession[]
+}
+
 // Model and group options
 export interface ModelOption {
   label: string
   value: string
+  supportedEndpointTypes?: string[]
+  capabilities: ModelCapabilities
+}
+
+export interface ModelCapabilities {
+  chat: boolean
+  vision: boolean
+  imageGeneration: boolean
+  imageEdit: boolean
 }
 
 export interface GroupOption {

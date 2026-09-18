@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -20,161 +21,284 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../constants'
 import {
-  saveConfig,
-  saveParameterEnabled,
-  saveMessages,
   applyMessageStateUpdate,
-  getInitialParameterEnabled,
-  getInitialPlaygroundConfig,
-  loadMessages,
+  loadLegacyPlaygroundSession,
+  loadWorkspace,
+  saveWorkspace,
   type MessageStateUpdater,
 } from '../lib'
 import type {
-  Message,
-  PlaygroundConfig,
-  ParameterEnabled,
-  ModelOption,
   GroupOption,
+  Message,
+  ModelOption,
+  ParameterEnabled,
+  PlaygroundConfig,
+  PlaygroundSession,
+  PlaygroundWorkspace,
 } from '../types'
 
-const MESSAGE_SAVE_DEBOUNCE_MS = 500
+const WORKSPACE_SAVE_DEBOUNCE_MS = 500
+const DEFAULT_SESSION_TITLE = 'New conversation'
 
-/**
- * Main state management hook for playground
- */
+function createSession(
+  config: PlaygroundConfig = DEFAULT_CONFIG,
+  parameterEnabled: ParameterEnabled = DEFAULT_PARAMETER_ENABLED,
+  messages: Message[] = []
+): PlaygroundSession {
+  const timestamp = Date.now()
+  return {
+    id: nanoid(),
+    title: DEFAULT_SESSION_TITLE,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    config: { ...config },
+    parameterEnabled: { ...parameterEnabled },
+    messages,
+  }
+}
+
+function getInitialWorkspace(): PlaygroundWorkspace {
+  return (
+    loadWorkspace() ?? {
+      activeSessionId: '',
+      sessions: [],
+    }
+  )
+}
+
 export function usePlaygroundState() {
-  // Load initial state from localStorage
-  const [config, setConfig] = useState<PlaygroundConfig>(
-    getInitialPlaygroundConfig
-  )
-
-  const [parameterEnabled, setParameterEnabled] = useState<ParameterEnabled>(
-    getInitialParameterEnabled
-  )
-
-  const [messages, setMessages] = useState<Message[]>([])
+  const [workspace, setWorkspace] =
+    useState<PlaygroundWorkspace>(getInitialWorkspace)
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
-  const messagesSaveTimerRef = useRef<number | null>(null)
-  const latestMessagesRef = useRef<Message[]>(messages)
-  const hasLoadedMessagesRef = useRef(false)
-
+  const workspaceSaveTimerRef = useRef<number | null>(null)
+  const latestWorkspaceRef = useRef(workspace)
+  const hasLoadedWorkspaceRef = useRef(false)
   const [models, setModels] = useState<ModelOption[]>([])
   const [groups, setGroups] = useState<GroupOption[]>([])
 
-  const persistMessages = useCallback((messagesToSave: Message[]) => {
-    latestMessagesRef.current = messagesToSave
+  const persistWorkspace = useCallback(
+    (workspaceToSave: PlaygroundWorkspace) => {
+      latestWorkspaceRef.current = workspaceToSave
 
-    if (!hasLoadedMessagesRef.current) {
-      return
-    }
-
-    if (messagesSaveTimerRef.current !== null) {
-      window.clearTimeout(messagesSaveTimerRef.current)
-    }
-
-    messagesSaveTimerRef.current = window.setTimeout(() => {
-      messagesSaveTimerRef.current = null
-      saveMessages(latestMessagesRef.current)
-    }, MESSAGE_SAVE_DEBOUNCE_MS)
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    window.setTimeout(() => {
-      const loadedMessages = loadMessages() ?? []
-      if (cancelled) {
+      if (!hasLoadedWorkspaceRef.current) {
         return
       }
 
-      latestMessagesRef.current = loadedMessages
-      hasLoadedMessagesRef.current = true
-      setMessages(loadedMessages)
+      if (workspaceSaveTimerRef.current !== null) {
+        window.clearTimeout(workspaceSaveTimerRef.current)
+      }
+
+      workspaceSaveTimerRef.current = window.setTimeout(() => {
+        workspaceSaveTimerRef.current = null
+        saveWorkspace(latestWorkspaceRef.current)
+      }, WORKSPACE_SAVE_DEBOUNCE_MS)
+    },
+    []
+  )
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setWorkspace((currentWorkspace) => {
+        if (currentWorkspace.sessions.length > 0) {
+          latestWorkspaceRef.current = currentWorkspace
+          return currentWorkspace
+        }
+
+        const session = loadLegacyPlaygroundSession(createSession)
+        const nextWorkspace = {
+          activeSessionId: session.id,
+          sessions: [session],
+        }
+        latestWorkspaceRef.current = nextWorkspace
+        return nextWorkspace
+      })
+      hasLoadedWorkspaceRef.current = true
       setIsLoadingMessages(false)
     }, 0)
 
-    return () => {
-      cancelled = true
-    }
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(
     () => () => {
-      if (messagesSaveTimerRef.current !== null) {
-        window.clearTimeout(messagesSaveTimerRef.current)
-        saveMessages(latestMessagesRef.current)
+      if (workspaceSaveTimerRef.current !== null) {
+        window.clearTimeout(workspaceSaveTimerRef.current)
+        saveWorkspace(latestWorkspaceRef.current)
       }
     },
     []
   )
 
-  // Update config with automatic save
+  const activeSession =
+    workspace.sessions.find(
+      (session) => session.id === workspace.activeSessionId
+    ) ?? workspace.sessions[0]
+
+  const updateActiveSession = useCallback(
+    (updater: (session: PlaygroundSession) => PlaygroundSession) => {
+      setWorkspace((previousWorkspace) => {
+        const activeSessionId = previousWorkspace.activeSessionId
+        const sessions = previousWorkspace.sessions.map((session) =>
+          session.id === activeSessionId
+            ? { ...updater(session), updatedAt: Date.now() }
+            : session
+        )
+        const nextWorkspace = { ...previousWorkspace, sessions }
+        persistWorkspace(nextWorkspace)
+        return nextWorkspace
+      })
+    },
+    [persistWorkspace]
+  )
+
   const updateConfig = useCallback(
     <K extends keyof PlaygroundConfig>(key: K, value: PlaygroundConfig[K]) => {
-      setConfig((prev) => {
-        const updated = { ...prev, [key]: value }
-        saveConfig(updated)
-        return updated
-      })
+      updateActiveSession((session) => ({
+        ...session,
+        config: { ...session.config, [key]: value },
+      }))
     },
-    []
+    [updateActiveSession]
   )
 
-  // Update parameter enabled with automatic save
   const updateParameterEnabled = useCallback(
     (key: keyof ParameterEnabled, value: boolean) => {
-      setParameterEnabled((prev) => {
-        const updated = { ...prev, [key]: value }
-        saveParameterEnabled(updated)
-        return updated
-      })
+      updateActiveSession((session) => ({
+        ...session,
+        parameterEnabled: { ...session.parameterEnabled, [key]: value },
+      }))
     },
-    []
+    [updateActiveSession]
   )
 
-  // Update messages with automatic save
+  const updateSessionMessages = useCallback(
+    (sessionId: string, updater: MessageStateUpdater) => {
+      setWorkspace((previousWorkspace) => {
+        const sessions = previousWorkspace.sessions.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                messages: applyMessageStateUpdate(session.messages, updater),
+                updatedAt: Date.now(),
+              }
+            : session
+        )
+        const nextWorkspace = { ...previousWorkspace, sessions }
+        persistWorkspace(nextWorkspace)
+        return nextWorkspace
+      })
+    },
+    [persistWorkspace]
+  )
+
   const updateMessages = useCallback(
     (updater: MessageStateUpdater) => {
-      setMessages((prev) => {
-        const newMessages = applyMessageStateUpdate(prev, updater)
-        persistMessages(newMessages)
-        return newMessages
-      })
+      updateActiveSession((session) => ({
+        ...session,
+        messages: applyMessageStateUpdate(session.messages, updater),
+      }))
     },
-    [persistMessages]
+    [updateActiveSession]
   )
 
-  // Clear all messages
   const clearMessages = useCallback(() => {
     updateMessages([])
   }, [updateMessages])
 
-  // Reset config to defaults
-  const resetConfig = useCallback(() => {
-    setConfig(DEFAULT_CONFIG)
-    setParameterEnabled(DEFAULT_PARAMETER_ENABLED)
-    saveConfig(DEFAULT_CONFIG)
-    saveParameterEnabled(DEFAULT_PARAMETER_ENABLED)
-  }, [])
+  const createNewSession = useCallback(() => {
+    const session = createSession()
+    setWorkspace((previousWorkspace) => {
+      const nextWorkspace = {
+        activeSessionId: session.id,
+        sessions: [...previousWorkspace.sessions, session],
+      }
+      persistWorkspace(nextWorkspace)
+      return nextWorkspace
+    })
+  }, [persistWorkspace])
+
+  const selectSession = useCallback(
+    (sessionId: string) => {
+      setWorkspace((previousWorkspace) => {
+        if (
+          !previousWorkspace.sessions.some(
+            (session) => session.id === sessionId
+          )
+        ) {
+          return previousWorkspace
+        }
+
+        const nextWorkspace = {
+          ...previousWorkspace,
+          activeSessionId: sessionId,
+        }
+        persistWorkspace(nextWorkspace)
+        return nextWorkspace
+      })
+    },
+    [persistWorkspace]
+  )
+
+  const renameSession = useCallback(
+    (sessionId: string, title: string) => {
+      const trimmedTitle = title.trim()
+      if (!trimmedTitle) return
+
+      setWorkspace((previousWorkspace) => {
+        const sessions = previousWorkspace.sessions.map((session) =>
+          session.id === sessionId
+            ? { ...session, title: trimmedTitle, updatedAt: Date.now() }
+            : session
+        )
+        const nextWorkspace = { ...previousWorkspace, sessions }
+        persistWorkspace(nextWorkspace)
+        return nextWorkspace
+      })
+    },
+    [persistWorkspace]
+  )
+
+  const deleteSession = useCallback(
+    (sessionId: string) => {
+      setWorkspace((previousWorkspace) => {
+        const sessions = previousWorkspace.sessions.filter(
+          (session) => session.id !== sessionId
+        )
+        const remainingSessions =
+          sessions.length > 0 ? sessions : [createSession()]
+        const activeSessionId = remainingSessions.some(
+          (session) => session.id === previousWorkspace.activeSessionId
+        )
+          ? previousWorkspace.activeSessionId
+          : remainingSessions[0].id
+        const nextWorkspace = { activeSessionId, sessions: remainingSessions }
+        persistWorkspace(nextWorkspace)
+        return nextWorkspace
+      })
+    },
+    [persistWorkspace]
+  )
 
   return {
-    // State
-    config,
-    parameterEnabled,
-    messages,
+    config: activeSession?.config ?? DEFAULT_CONFIG,
+    parameterEnabled:
+      activeSession?.parameterEnabled ?? DEFAULT_PARAMETER_ENABLED,
+    messages: activeSession?.messages ?? [],
+    activeSessionId: activeSession?.id ?? '',
+    sessions: workspace.sessions,
     isLoadingMessages,
     models,
     groups,
-
-    // Setters
     setModels,
     setGroups,
-
-    // Actions
     updateConfig,
     updateParameterEnabled,
     updateMessages,
+    updateSessionMessages,
     clearMessages,
-    resetConfig,
+    createNewSession,
+    selectSession,
+    renameSession,
+    deleteSession,
   }
 }

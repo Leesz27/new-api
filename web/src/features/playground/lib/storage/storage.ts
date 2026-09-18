@@ -16,8 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { MESSAGE_STATUS, STORAGE_KEYS } from '../../constants'
-import type { PlaygroundConfig, ParameterEnabled, Message } from '../../types'
+import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED, MESSAGE_STATUS, STORAGE_KEYS } from '../../constants'
+import type {
+  PlaygroundConfig,
+  ParameterEnabled,
+  Message,
+  PlaygroundSession,
+  PlaygroundWorkspace,
+} from '../../types'
 import {
   finalizeMessage,
   isAssistantMessagePending,
@@ -30,10 +36,12 @@ import {
   MAX_LOADED_MESSAGES_CHARS,
   MAX_STORED_MESSAGES,
   MAX_STORED_MESSAGES_BYTES,
+  MAX_STORED_SESSIONS,
   STORAGE_VERSION,
   messagesSchema,
   parameterEnabledSchema,
   playgroundConfigSchema,
+  playgroundWorkspaceSchema,
 } from './storage-schema'
 
 type StoredEnvelope<T> = {
@@ -59,6 +67,18 @@ function readStoredMessagesValue(): unknown | null {
 
   if (saved.length > MAX_STORED_MESSAGES_BYTES) {
     localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    return null
+  }
+
+  return JSON.parse(saved) as unknown
+}
+
+function readStoredWorkspaceValue(): unknown | null {
+  const saved = localStorage.getItem(STORAGE_KEYS.WORKSPACE)
+  if (!saved) return null
+
+  if (saved.length > MAX_STORED_MESSAGES_BYTES) {
+    localStorage.removeItem(STORAGE_KEYS.WORKSPACE)
     return null
   }
 
@@ -273,6 +293,78 @@ function trimMessagesByContentSize(messages: Message[]): Message[] {
   }
 
   return result.reverse()
+}
+
+function normalizeMessages(messages: Message[]): Message[] {
+  const normalized = messages.map(normalizeStoredMessageForLoad)
+  const trimmed = trimMessages(normalized)
+  const sizeTrimmed = trimMessagesByContentSize(trimmed)
+  return sanitizeMessagesOnLoad(sizeTrimmed)
+}
+
+function normalizeWorkspace(workspace: PlaygroundWorkspace): PlaygroundWorkspace {
+  const sessions = workspace.sessions
+    .slice(-MAX_STORED_SESSIONS)
+    .map((session) => ({
+      ...session,
+      config: { ...DEFAULT_CONFIG, ...playgroundConfigSchema.parse(session.config) },
+      parameterEnabled: {
+        ...DEFAULT_PARAMETER_ENABLED,
+        ...parameterEnabledSchema.parse(session.parameterEnabled),
+      },
+      messages: normalizeMessages(session.messages),
+    }))
+  const activeSessionId = sessions.some(
+    (session) => session.id === workspace.activeSessionId
+  )
+    ? workspace.activeSessionId
+    : sessions.at(-1)?.id ?? ''
+
+  return { activeSessionId, sessions }
+}
+
+export function loadWorkspace(): PlaygroundWorkspace | null {
+  try {
+    const saved = readStoredWorkspaceValue()
+    if (!saved) return null
+
+    const parsed = playgroundWorkspaceSchema.parse(
+      unwrapStoredValue(saved)
+    ) as PlaygroundWorkspace
+    const normalized = normalizeWorkspace(parsed)
+
+    if (normalized !== parsed) {
+      saveWorkspace(normalized)
+    }
+
+    return normalized
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to load playground workspace:', error)
+  }
+  return null
+}
+
+export function saveWorkspace(workspace: PlaygroundWorkspace): void {
+  try {
+    const parsed = playgroundWorkspaceSchema.parse(
+      normalizeWorkspace(workspace)
+    ) as PlaygroundWorkspace
+    writeStoredValue(STORAGE_KEYS.WORKSPACE, parsed)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to save playground workspace:', error)
+  }
+}
+
+export function loadLegacyPlaygroundSession(
+  createSession: (config: PlaygroundConfig, parameterEnabled: ParameterEnabled, messages: Message[]) => PlaygroundSession
+): PlaygroundSession {
+  return createSession(
+    { ...DEFAULT_CONFIG, ...loadConfig() },
+    { ...DEFAULT_PARAMETER_ENABLED, ...loadParameterEnabled() },
+    loadMessages() ?? []
+  )
 }
 
 /**
