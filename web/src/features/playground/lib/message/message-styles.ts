@@ -22,30 +22,34 @@ For commercial licensing, please contact support@quantumnous.com
  */
 export function getMessageContentStyles() {
   return [
-    // Assistant content reads like a document column; user bubble stays compact.
-    'group-[.is-assistant]:w-full',
-    'group-[.is-assistant]:max-w-[78ch]',
+    // Both roles use compact bubbles with mirrored corner accents.
     'group-[.is-user]:w-fit',
+    'group-[.is-assistant]:w-fit',
 
-    // User bubble: compact surface that stays calm in both light and dark themes.
+    // User bubble: soft primary tint, right-side chat style.
     'group-[.is-user]:rounded-2xl',
     'group-[.is-user]:rounded-br-md',
     'group-[.is-user]:border',
-    'group-[.is-user]:border-border/70',
-    'group-[.is-user]:bg-muted/70',
+    'group-[.is-user]:border-primary/15',
+    'group-[.is-user]:bg-primary/10',
     'group-[.is-user]:px-4',
     'group-[.is-user]:py-2.5',
     'group-[.is-user]:text-foreground',
     'group-[.is-user]:shadow-sm',
-    'group-[.is-user]:shadow-black/5',
+    'group-[.is-user]:shadow-primary/5',
 
-    // Assistant response: flat reading surface using the active UI font axis.
-    'group-[.is-assistant]:bg-transparent',
-    'group-[.is-assistant]:p-0',
-    'group-[.is-assistant]:rounded-none',
-    'group-[.is-assistant]:overflow-visible',
+    // Assistant bubble: muted surface so model replies also read as chat bubbles.
+    'group-[.is-assistant]:rounded-2xl',
+    'group-[.is-assistant]:rounded-bl-md',
+    'group-[.is-assistant]:border',
+    'group-[.is-assistant]:border-border/70',
+    'group-[.is-assistant]:bg-muted/70',
+    'group-[.is-assistant]:px-4',
+    'group-[.is-assistant]:py-2.5',
+    'group-[.is-assistant]:text-foreground',
+    'group-[.is-assistant]:shadow-sm',
+    'group-[.is-assistant]:shadow-black/5',
     'group-[.is-assistant]:[font-family:var(--font-body)]',
-    'group-[.is-assistant]:text-foreground/90',
 
     // Preferred readable widths and wrapping
     'text-[0.95rem]',
@@ -55,10 +59,14 @@ export function getMessageContentStyles() {
     'sm:text-[0.975rem]',
     'sm:leading-7',
 
-    // Cap user bubble width so it does not look like a banner
+    // Cap bubble width so neither side looks like a full-width banner
     'group-[.is-user]:max-w-[85%]',
+    'group-[.is-assistant]:max-w-[85%]',
     'sm:group-[.is-user]:max-w-[62ch]',
+    'sm:group-[.is-assistant]:max-w-[62ch]',
     'md:group-[.is-user]:max-w-[68ch]',
+    'md:group-[.is-assistant]:max-w-[68ch]',
     'lg:group-[.is-user]:max-w-[72ch]',
+    'lg:group-[.is-assistant]:max-w-[72ch]',
   ].join(' ')
 }

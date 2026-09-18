@@ -159,7 +159,7 @@ export function PlaygroundMessageContent({
       )}
 
       {showLoader && (
-        <div className='flex items-center gap-2 py-2'>
+        <div className='bg-muted/70 border-border/70 flex w-fit items-center gap-2 rounded-2xl rounded-bl-md border px-4 py-2.5 shadow-sm'>
           <Loader />
           <Shimmer className='text-sm' duration={1}>
             {t('Responding...')}
@@ -180,7 +180,7 @@ export function PlaygroundMessageContent({
           {isSourceVisible ? (
             <CodeBlock
               code={versionContent}
-              className='my-0 group-[.is-assistant]:w-full group-[.is-assistant]:max-w-[78ch]'
+              className='my-0 w-fit max-w-[85%] sm:max-w-[62ch] md:max-w-[68ch] lg:max-w-[72ch]'
               collapsedLines={24}
               defaultCollapsed={false}
               language='markdown'

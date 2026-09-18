@@ -205,7 +205,7 @@ export function PlaygroundParameterPanel(props: PlaygroundParameterPanelProps) {
   const trigger = (
     <PromptInputButton
       aria-label={t('Parameters')}
-      className='text-muted-foreground hover:text-foreground hover:bg-muted/70 relative font-medium'
+      className='text-foreground/75 hover:text-foreground hover:bg-background relative font-medium'
       disabled={props.disabled}
       variant='ghost'
     >

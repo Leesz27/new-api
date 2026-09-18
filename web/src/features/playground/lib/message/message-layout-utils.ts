@@ -29,7 +29,8 @@ export function getMessageAlignment(
     return 'left'
   }
 
-  return message.from === MESSAGE_ROLES.USER ? 'left' : 'right'
+  // Chat layout: user on the right, model on the left.
+  return message.from === MESSAGE_ROLES.USER ? 'right' : 'left'
 }
 
 export function getMessageAlignmentClass(alignment: MessageAlignment): string {

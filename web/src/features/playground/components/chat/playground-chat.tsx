@@ -129,7 +129,7 @@ export function PlaygroundChat({
 
     return (
       <Message
-        className='group flex-row-reverse py-2.5'
+        className='group py-2.5'
         from={message.from}
         key={message.key}
       >
