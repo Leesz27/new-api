@@ -67,11 +67,15 @@ export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
   seed: false,
 }
 
+export const DEFAULT_SESSION_TITLE = 'New conversation'
+export const SESSION_TITLE_MAX_LENGTH = 24
+
 // Storage keys
 export const STORAGE_KEYS = {
   CONFIG: 'playground_config',
   MESSAGES: 'playground_messages',
   PARAMETER_ENABLED: 'playground_parameter_enabled',
+  SIDEBAR_COLLAPSED: 'playground_sidebar_collapsed',
   WORKSPACE: 'playground_workspace',
 } as const
 

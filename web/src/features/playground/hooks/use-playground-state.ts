@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../constants'
+import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED, DEFAULT_SESSION_TITLE } from '../constants'
 import {
   applyMessageStateUpdate,
   loadLegacyPlaygroundSession,
@@ -27,6 +27,7 @@ import {
   saveWorkspace,
   type MessageStateUpdater,
 } from '../lib'
+import { resolveSessionTitle } from '../lib/message/session-title-utils'
 import type {
   GroupOption,
   Message,
@@ -38,7 +39,6 @@ import type {
 } from '../types'
 
 const WORKSPACE_SAVE_DEBOUNCE_MS = 500
-const DEFAULT_SESSION_TITLE = 'New conversation'
 
 function createSession(
   config: PlaygroundConfig = DEFAULT_CONFIG,
@@ -48,7 +48,7 @@ function createSession(
   const timestamp = Date.now()
   return {
     id: nanoid(),
-    title: DEFAULT_SESSION_TITLE,
+    title: resolveSessionTitle(DEFAULT_SESSION_TITLE, messages),
     createdAt: timestamp,
     updatedAt: timestamp,
     config: { ...config },
@@ -123,6 +123,11 @@ export function usePlaygroundState() {
     () => () => {
       if (workspaceSaveTimerRef.current !== null) {
         window.clearTimeout(workspaceSaveTimerRef.current)
+        workspaceSaveTimerRef.current = null
+      }
+
+      // Always flush on leave so SPA route switches do not drop the last edits.
+      if (hasLoadedWorkspaceRef.current) {
         saveWorkspace(latestWorkspaceRef.current)
       }
     },
@@ -174,15 +179,19 @@ export function usePlaygroundState() {
   const updateSessionMessages = useCallback(
     (sessionId: string, updater: MessageStateUpdater) => {
       setWorkspace((previousWorkspace) => {
-        const sessions = previousWorkspace.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                messages: applyMessageStateUpdate(session.messages, updater),
-                updatedAt: Date.now(),
-              }
-            : session
-        )
+        const sessions = previousWorkspace.sessions.map((session) => {
+          if (session.id !== sessionId) {
+            return session
+          }
+
+          const messages = applyMessageStateUpdate(session.messages, updater)
+          return {
+            ...session,
+            messages,
+            title: resolveSessionTitle(session.title, messages),
+            updatedAt: Date.now(),
+          }
+        })
         const nextWorkspace = { ...previousWorkspace, sessions }
         persistWorkspace(nextWorkspace)
         return nextWorkspace
@@ -193,10 +202,14 @@ export function usePlaygroundState() {
 
   const updateMessages = useCallback(
     (updater: MessageStateUpdater) => {
-      updateActiveSession((session) => ({
-        ...session,
-        messages: applyMessageStateUpdate(session.messages, updater),
-      }))
+      updateActiveSession((session) => {
+        const messages = applyMessageStateUpdate(session.messages, updater)
+        return {
+          ...session,
+          messages,
+          title: resolveSessionTitle(session.title, messages),
+        }
+      })
     },
     [updateActiveSession]
   )
@@ -206,8 +219,34 @@ export function usePlaygroundState() {
   }, [updateMessages])
 
   const createNewSession = useCallback(() => {
-    const session = createSession()
     setWorkspace((previousWorkspace) => {
+      const activeSession = previousWorkspace.sessions.find(
+        (session) => session.id === previousWorkspace.activeSessionId
+      )
+      if (activeSession && activeSession.messages.length === 0) {
+        return previousWorkspace
+      }
+
+      const emptySession = [...previousWorkspace.sessions]
+        .filter((session) => session.messages.length === 0)
+        .sort((left, right) => right.updatedAt - left.updatedAt)[0]
+
+      if (emptySession) {
+        const now = Date.now()
+        const sessions = previousWorkspace.sessions.map((session) =>
+          session.id === emptySession.id
+            ? { ...session, updatedAt: now }
+            : session
+        )
+        const nextWorkspace = {
+          activeSessionId: emptySession.id,
+          sessions,
+        }
+        persistWorkspace(nextWorkspace)
+        return nextWorkspace
+      }
+
+      const session = createSession()
       const nextWorkspace = {
         activeSessionId: session.id,
         sessions: [...previousWorkspace.sessions, session],

@@ -22,6 +22,7 @@ export const STORAGE_VERSION = 2
 export const MAX_STORED_SESSIONS = 50
 export const MAX_STORED_MESSAGES = 100
 export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
+export const MAX_PERSISTED_DATA_URL_CHARS = 16_384
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
 export const MAX_LOADED_MESSAGE_CHARS = 40_000
 
@@ -92,6 +93,7 @@ const reasoningSchema = z.object({
 const messageSchema = z.object({
   key: z.string(),
   from: messageRoleSchema,
+  model: z.string().optional(),
   versions: z.array(messageVersionSchema).min(1),
   createdAt: z.number().optional(),
   startedAt: z.number().optional(),

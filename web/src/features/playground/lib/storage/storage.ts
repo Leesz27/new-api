@@ -31,9 +31,11 @@ import {
 } from '../message/message-streaming-utils'
 import { completeAssistantTiming } from '../message/message-timing-utils'
 import { hasMessageContent } from '../message/message-utils'
+import { resolveSessionTitle } from '../message/session-title-utils'
 import {
   MAX_LOADED_MESSAGE_CHARS,
   MAX_LOADED_MESSAGES_CHARS,
+  MAX_PERSISTED_DATA_URL_CHARS,
   MAX_STORED_MESSAGES,
   MAX_STORED_MESSAGES_BYTES,
   MAX_STORED_SESSIONS,
@@ -53,6 +55,67 @@ const TRUNCATED_CONTENT_SUFFIX = '\n\n[...]'
 const MIN_PREFIX_COLLAPSE_LENGTH = 2000
 const MIN_REPEATED_SECTION_COUNT = 3
 const SECTION_HEADING_LINE_PATTERN = /^#{2,6}\s+\d+\.\s+.+$/gm
+
+// Survive SPA route remounts without depending on localStorage round-trips.
+let memoryWorkspace: PlaygroundWorkspace | null = null
+
+export function getMemoryWorkspace(): PlaygroundWorkspace | null {
+  return memoryWorkspace
+}
+
+export function clearMemoryWorkspace(): void {
+  memoryWorkspace = null
+}
+
+function isOversizedDataUrl(value: string | undefined): boolean {
+  return Boolean(
+    value &&
+      value.startsWith('data:') &&
+      value.length > MAX_PERSISTED_DATA_URL_CHARS
+  )
+}
+
+function compactDataUrl(value: string): string {
+  if (!isOversizedDataUrl(value)) {
+    return value
+  }
+
+  return ''
+}
+
+function compactMessageForStorage(message: Message): Message {
+  return {
+    ...message,
+    versions: message.versions.map((version) => ({
+      ...version,
+      attachments: version.attachments?.map((attachment) => ({
+        ...attachment,
+        url: compactDataUrl(attachment.url),
+      })),
+      image: version.image
+        ? {
+            ...version.image,
+            imageUrl: compactDataUrl(version.image.imageUrl),
+            sourceUrl: version.image.sourceUrl
+              ? compactDataUrl(version.image.sourceUrl) || undefined
+              : undefined,
+          }
+        : undefined,
+    })),
+  }
+}
+
+function compactWorkspaceForStorage(
+  workspace: PlaygroundWorkspace
+): PlaygroundWorkspace {
+  return {
+    ...workspace,
+    sessions: workspace.sessions.map((session) => ({
+      ...session,
+      messages: session.messages.map(compactMessageForStorage),
+    })),
+  }
+}
 
 function readStoredValue(key: string): unknown | null {
   const saved = localStorage.getItem(key)
@@ -77,11 +140,7 @@ function readStoredWorkspaceValue(): unknown | null {
   const saved = localStorage.getItem(STORAGE_KEYS.WORKSPACE)
   if (!saved) return null
 
-  if (saved.length > MAX_STORED_MESSAGES_BYTES) {
-    localStorage.removeItem(STORAGE_KEYS.WORKSPACE)
-    return null
-  }
-
+  // Never delete oversized payloads blindly — compact after parse instead.
   return JSON.parse(saved) as unknown
 }
 
@@ -305,15 +364,19 @@ function normalizeMessages(messages: Message[]): Message[] {
 function normalizeWorkspace(workspace: PlaygroundWorkspace): PlaygroundWorkspace {
   const sessions = workspace.sessions
     .slice(-MAX_STORED_SESSIONS)
-    .map((session) => ({
-      ...session,
-      config: { ...DEFAULT_CONFIG, ...playgroundConfigSchema.parse(session.config) },
-      parameterEnabled: {
-        ...DEFAULT_PARAMETER_ENABLED,
-        ...parameterEnabledSchema.parse(session.parameterEnabled),
-      },
-      messages: normalizeMessages(session.messages),
-    }))
+    .map((session) => {
+      const messages = normalizeMessages(session.messages)
+      return {
+        ...session,
+        title: resolveSessionTitle(session.title, messages),
+        config: { ...DEFAULT_CONFIG, ...playgroundConfigSchema.parse(session.config) },
+        parameterEnabled: {
+          ...DEFAULT_PARAMETER_ENABLED,
+          ...parameterEnabledSchema.parse(session.parameterEnabled),
+        },
+        messages,
+      }
+    })
   const activeSessionId = sessions.some(
     (session) => session.id === workspace.activeSessionId
   )
@@ -324,6 +387,10 @@ function normalizeWorkspace(workspace: PlaygroundWorkspace): PlaygroundWorkspace
 }
 
 export function loadWorkspace(): PlaygroundWorkspace | null {
+  if (memoryWorkspace?.sessions.length) {
+    return memoryWorkspace
+  }
+
   try {
     const saved = readStoredWorkspaceValue()
     if (!saved) return null
@@ -332,10 +399,11 @@ export function loadWorkspace(): PlaygroundWorkspace | null {
       unwrapStoredValue(saved)
     ) as PlaygroundWorkspace
     const normalized = normalizeWorkspace(parsed)
+    memoryWorkspace = normalized
 
-    if (normalized !== parsed) {
-      saveWorkspace(normalized)
-    }
+    // Rewrite a compacted copy so oversized image payloads do not wipe the
+    // workspace on the next visit.
+    persistWorkspaceToLocalStorage(normalized)
 
     return normalized
   } catch (error) {
@@ -345,13 +413,78 @@ export function loadWorkspace(): PlaygroundWorkspace | null {
   return null
 }
 
+function persistWorkspaceToLocalStorage(workspace: PlaygroundWorkspace): void {
+  let candidate = compactWorkspaceForStorage(workspace)
+
+  for (let attempt = 0; attempt < MAX_STORED_SESSIONS; attempt++) {
+    const payload: StoredEnvelope<PlaygroundWorkspace> = {
+      version: STORAGE_VERSION,
+      data: candidate,
+    }
+    const serialized = JSON.stringify(payload)
+
+    if (serialized.length <= MAX_STORED_MESSAGES_BYTES) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.WORKSPACE, serialized)
+        return
+      } catch (error) {
+        // Quota exceeded — keep trimming below.
+        // eslint-disable-next-line no-console
+        console.error('Failed to persist playground workspace:', error)
+      }
+    }
+
+    if (candidate.sessions.length <= 1) {
+      const onlySession = candidate.sessions[0]
+      if (!onlySession || onlySession.messages.length <= 1) {
+        break
+      }
+
+      candidate = {
+        ...candidate,
+        sessions: [
+          {
+            ...onlySession,
+            messages: onlySession.messages.slice(
+              Math.ceil(onlySession.messages.length / 2)
+            ),
+          },
+        ],
+        activeSessionId: onlySession.id,
+      }
+      continue
+    }
+
+    const remainingSessions = candidate.sessions.slice(1)
+    candidate = {
+      ...candidate,
+      sessions: remainingSessions,
+      activeSessionId: remainingSessions.some(
+        (session) => session.id === candidate.activeSessionId
+      )
+        ? candidate.activeSessionId
+        : (remainingSessions.at(-1)?.id ?? ''),
+    }
+  }
+
+  try {
+    writeStoredValue(STORAGE_KEYS.WORKSPACE, candidate)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to persist playground workspace:', error)
+  }
+}
+
 export function saveWorkspace(workspace: PlaygroundWorkspace): void {
   try {
     const parsed = playgroundWorkspaceSchema.parse(
       normalizeWorkspace(workspace)
     ) as PlaygroundWorkspace
-    writeStoredValue(STORAGE_KEYS.WORKSPACE, parsed)
+    memoryWorkspace = parsed
+    persistWorkspaceToLocalStorage(parsed)
   } catch (error) {
+    // Keep the in-memory snapshot even when localStorage is full/unavailable.
+    memoryWorkspace = workspace
     // eslint-disable-next-line no-console
     console.error('Failed to save playground workspace:', error)
   }
@@ -480,9 +613,11 @@ export function saveMessages(messages: Message[]): void {
  */
 export function clearPlaygroundData(): void {
   try {
+    clearMemoryWorkspace()
     localStorage.removeItem(STORAGE_KEYS.CONFIG)
     localStorage.removeItem(STORAGE_KEYS.PARAMETER_ENABLED)
     localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    localStorage.removeItem(STORAGE_KEYS.WORKSPACE)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to clear playground data:', error)
